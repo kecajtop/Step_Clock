@@ -1,0 +1,234 @@
+substitutions:
+  name: stepper-clock
+  friendly_name: stepper-clock
+  devicename: stepper-clock
+  upper_devicename: stepper-clock
+  device_icon: mdi:chip
+  key: !secret key_stepper-clock
+  ota: !secret ota_stepper-clock
+  IP: !secret IP_stepper-clock
+  fallback_pass: !secret fallback_pass_stepper-clock
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  wifi_ssid_ha: !secret wifi_ssid_ha
+  wifi_password_ha: !secret wifi_password_ha
+  timezone_ha: !secret timezone_ha
+  log_level: DEBUG
+
+esphome:
+  name: $devicename
+  on_boot:
+    priority: -500
+    then:
+    - stepper.report_position:
+        id: my_stepper_h
+        position: 0
+    - stepper.set_target:
+        id: my_stepper_h
+        target: 10000
+    - stepper.report_position:
+        id: my_stepper_m
+        position: 0
+    - stepper.set_target:
+        id: my_stepper_m
+        target: 10000
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: ${log_level}
+  baud_rate: 115200
+
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+  id: bus_a
+  
+time:
+  - platform: ds1307
+    id: ds1307_time
+  - platform: sntp
+    id: sntp_time 
+    # ...
+    on_time_sync:
+      then:
+        # ... and update the RTC when the synchronization was successful
+        ds1307.write_time:
+    on_time:
+      # Every 5 minutes
+      - seconds: 0
+        minutes: /5
+        then:
+          - lambda: |-
+              ESP_LOGD("lambda", "sntp_time");
+              if (id(my_global_cal_flag_h) > 0) 
+              {
+                if (id(sntp_time).now().hour >12)
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }
+                else
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }
+                
+              }
+              if (id(my_global_cal_flag_m) > 0) 
+              {
+                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+              }
+         
+
+packages:
+  wifi: !include common/wifi.yaml
+  device_base: !include common/device_base.yaml
+  generic: !include common/generic.yaml
+  esp32_only: !include common/esp32_only.yaml
+  sun: !include common/sun/lat_long.yaml
+
+globals:
+   - id: my_global_cal_flag_h
+     type: int
+     restore_value: no
+     initial_value: '0'
+   - id: my_global_cal_flag_m
+     type: int
+     restore_value: no
+     initial_value: '0'
+
+stepper:
+  - platform: uln2003
+    id: my_stepper_h
+    pin_a: GPIO27
+    pin_b: GPIO14
+    pin_c: GPIO12
+    pin_d: GPIO13
+    max_speed: 500 steps/s
+    step_mode: HALF_STEP
+    # Optional:
+    acceleration: inf
+    deceleration: inf
+  - platform: uln2003
+    id: my_stepper_m
+    pin_a: GPIO5
+    pin_b: GPIO23
+    pin_c: GPIO19
+    pin_d: GPIO18
+    max_speed: 500 steps/s
+    step_mode: HALF_STEP
+
+    # Optional:
+    acceleration: 500 steps/s^2
+    deceleration: 500 steps/s^2
+  
+sensor:
+  - platform: adc
+    pin: GPIO34
+    id: hallMin
+    name: ${friendly_name} hallMin
+    update_interval: 100ms
+    raw: true
+    attenuation: 12db
+    on_value_range:
+      - above: 3000
+        then:
+        - lambda: |-
+            if (id(my_global_cal_flag_m) == 0)
+            {
+              id(my_stepper_m).report_position(0);
+              id(my_stepper_m).set_target(0);
+              id(my_global_cal_flag_m) = 1;
+              ESP_LOGD("lambda", "my_global_cal_flag_m");
+            } 
+  - platform: adc
+    pin: GPIO36
+    id: hallHour
+    name: ${friendly_name} hallHour
+    update_interval: 100ms
+    raw: true
+    attenuation: 12db
+    on_value_range:
+      - above: 2400
+        then:
+        - lambda: |-
+            if (id(my_global_cal_flag_h) == 0)
+            {
+              id(my_stepper_h).report_position(0);
+              id(my_stepper_h).set_target(0);
+              id(my_global_cal_flag_h) = 1;
+              ESP_LOGD("lambda", "my_global_cal_flag_h");
+            } 
+              
+  - platform: template
+    name: my_stepper_m
+    lambda: |-
+        return id(my_stepper_m).current_position;
+    update_interval: 1s
+  - platform: template
+    name: my_stepper_h
+    lambda: |-
+        return id(my_stepper_h).current_position;
+    update_interval: 1s
+button:
+  - platform: template
+    name: my_stepper_h Button
+    on_press:
+    - stepper.report_position:
+        id: my_stepper_h
+        position: 0
+    - stepper.set_target:
+        id: my_stepper_h
+        target: 10000
+    - lambda: |-
+              id(my_global_cal_flag_h) = 0;
+  - platform: template
+    name: my_stepper_m Button
+    on_press:
+    - stepper.report_position:
+        id: my_stepper_m
+        position: 0
+    - stepper.set_target:
+        id: my_stepper_m
+        target: 10000
+    - lambda: |-
+              id(my_global_cal_flag_m) = 0;
+  - platform: template
+    name: set_time
+    on_press:
+    - stepper.set_deceleration:
+        id: my_stepper_h
+        deceleration: 1000 steps/s^2
+    - stepper.set_acceleration:
+        id: my_stepper_h
+        acceleration: 1000 steps/s^2
+    - stepper.set_speed:
+        id: my_stepper_h
+        speed: 500 steps/s
+    - stepper.set_deceleration:
+        id: my_stepper_m
+        deceleration: 1000 steps/s^2
+    - stepper.set_acceleration:
+        id: my_stepper_m
+        acceleration: 1000 steps/s^2
+    - stepper.set_speed:
+        id: my_stepper_m
+        speed: 500 steps/s
+    - lambda: |- 
+              if (id(my_global_cal_flag_h) > 0) 
+              {
+                if (id(sntp_time).now().hour >12)
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }
+                else
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }               
+              }
+              if (id(my_global_cal_flag_m) > 0) 
+              {
+                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+              }
