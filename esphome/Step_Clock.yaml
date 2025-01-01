@@ -1,19 +1,19 @@
 substitutions:
-  name: stepper-clock
-  friendly_name: stepper-clock
-  devicename: stepper-clock
-  upper_devicename: stepper-clock
+  name: step-clock
+  friendly_name: step-clock
+  devicename: step-clock
+  upper_devicename: step-clock
   device_icon: mdi:chip
-  key: !secret key_stepper-clock
-  ota: !secret ota_stepper-clock
-  IP: !secret IP_stepper-clock
-  fallback_pass: !secret fallback_pass_stepper-clock
+  key: !secret key_step-clock
+  ota: !secret ota_step-clock
+  IP: !secret IP_step-clock
+  fallback_pass: !secret fallback_pass_step-clock
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   wifi_ssid_ha: !secret wifi_ssid_ha
   wifi_password_ha: !secret wifi_password_ha
   timezone_ha: !secret timezone_ha
-  log_level: DEBUG
+  log_level: INFO
 
 esphome:
   name: $devicename
@@ -64,21 +64,37 @@ time:
         then:
           - lambda: |-
               ESP_LOGD("lambda", "sntp_time");
-              if (id(my_global_cal_flag_h) > 0) 
-              {
-                if (id(sntp_time).now().hour >12)
+              if (id(is_in_run_mode) > 0)
+              { 
+                if (id(my_global_cal_flag_h) > 0) 
                 {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  if (id(sntp_time).now().hour >12)
+                  {
+                    id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  }
+                  else
+                  {
+                    id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  }
+                  
                 }
-                else
+                if (id(my_global_cal_flag_m) > 0) 
                 {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
                 }
-                
               }
-              if (id(my_global_cal_flag_m) > 0) 
+              else
               {
-                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+                id(my_global_cal_flag_h) = 0;
+                id(my_global_cal_flag_m) = 0;
+
+                id(is_in_run_mode) = 1;
+            
+                id(my_stepper_h).report_position(0);
+                id(my_stepper_h).set_target(10000);
+              
+                id(my_stepper_m).report_position(0);
+                id(my_stepper_m).set_target(10000);
               }
          
 
@@ -98,6 +114,10 @@ globals:
      type: int
      restore_value: no
      initial_value: '0'
+   - id: is_in_run_mode
+     type: int
+     restore_value: no
+     initial_value: '1'
 
 stepper:
   - platform: uln2003
@@ -123,7 +143,64 @@ stepper:
     # Optional:
     acceleration: 500 steps/s^2
     deceleration: 500 steps/s^2
-  
+
+select:
+  - platform: template
+    name: ${friendly_name} Calibration function
+    id: select_1
+    optimistic: true
+    options:
+      - CALL
+      - RUN
+      - STOP
+      - INIT
+    initial_option: INIT
+    set_action:
+      - logger.log:
+          format: "Chosen option: %s"
+          args: ["x.c_str()"]
+      - lambda: |-
+          id(select_1).state = x.c_str();
+    on_value:
+      then:
+      - lambda: |-
+          if ( x == "CALL")
+          {
+            id(my_global_cal_flag_h) = 0;
+            id(my_global_cal_flag_m) = 0;
+
+            id(is_in_run_mode) = 1;
+            
+            id(my_stepper_h).report_position(0);
+            id(my_stepper_h).set_target(10000);
+              
+            id(my_stepper_m).report_position(0);
+            id(my_stepper_m).set_target(10000);
+          }
+          else if ( x == "RUN")
+          {
+            id(is_in_run_mode) = 1;
+              if (id(my_global_cal_flag_h) > 0) 
+              {
+                if (id(sntp_time).now().hour >12)
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }
+                else
+                {
+                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                }
+                
+              }
+              if (id(my_global_cal_flag_m) > 0) 
+              {
+                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+              }
+          }
+          else if ( x == "STOP")
+          {
+            id(is_in_run_mode) = 0;
+          }
 sensor:
   - platform: adc
     pin: GPIO34
@@ -131,6 +208,7 @@ sensor:
     name: ${friendly_name} hallMin
     update_interval: 100ms
     raw: true
+    internal: true
     attenuation: 12db
     on_value_range:
       - above: 3000
@@ -149,6 +227,7 @@ sensor:
     name: ${friendly_name} hallHour
     update_interval: 100ms
     raw: true
+    internal: true
     attenuation: 12db
     on_value_range:
       - above: 2400
@@ -162,73 +241,73 @@ sensor:
               ESP_LOGD("lambda", "my_global_cal_flag_h");
             } 
               
-  - platform: template
-    name: my_stepper_m
-    lambda: |-
-        return id(my_stepper_m).current_position;
-    update_interval: 1s
-  - platform: template
-    name: my_stepper_h
-    lambda: |-
-        return id(my_stepper_h).current_position;
-    update_interval: 1s
+#  - platform: template
+#    name: my_stepper_m
+#    lambda: |-
+#        return id(my_stepper_m).current_position;
+#    update_interval: 1s
+#  - platform: template
+#    name: my_stepper_h
+#    lambda: |-
+#        return id(my_stepper_h).current_position;
+#    update_interval: 1s
 button:
-  - platform: template
-    name: my_stepper_h Button
-    on_press:
-    - stepper.report_position:
-        id: my_stepper_h
-        position: 0
-    - stepper.set_target:
-        id: my_stepper_h
-        target: 10000
-    - lambda: |-
-              id(my_global_cal_flag_h) = 0;
-  - platform: template
-    name: my_stepper_m Button
-    on_press:
-    - stepper.report_position:
-        id: my_stepper_m
-        position: 0
-    - stepper.set_target:
-        id: my_stepper_m
-        target: 10000
-    - lambda: |-
-              id(my_global_cal_flag_m) = 0;
-  - platform: template
-    name: set_time
-    on_press:
-    - stepper.set_deceleration:
-        id: my_stepper_h
-        deceleration: 1000 steps/s^2
-    - stepper.set_acceleration:
-        id: my_stepper_h
-        acceleration: 1000 steps/s^2
-    - stepper.set_speed:
-        id: my_stepper_h
-        speed: 500 steps/s
-    - stepper.set_deceleration:
-        id: my_stepper_m
-        deceleration: 1000 steps/s^2
-    - stepper.set_acceleration:
-        id: my_stepper_m
-        acceleration: 1000 steps/s^2
-    - stepper.set_speed:
-        id: my_stepper_m
-        speed: 500 steps/s
-    - lambda: |- 
-              if (id(my_global_cal_flag_h) > 0) 
-              {
-                if (id(sntp_time).now().hour >12)
-                {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
-                }
-                else
-                {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
-                }               
-              }
-              if (id(my_global_cal_flag_m) > 0) 
-              {
-                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
-              }
+#  - platform: template
+#    name: my_stepper_h Button
+#    on_press:
+#    - stepper.report_position:
+#        id: my_stepper_h
+#        position: 0
+#    - stepper.set_target:
+#        id: my_stepper_h
+#        target: 10000
+#    - lambda: |-
+#              id(my_global_cal_flag_h) = 0;
+#  - platform: template
+#    name: my_stepper_m Button
+#    on_press:
+#    - stepper.report_position:
+#        id: my_stepper_m
+#        position: 0
+#    - stepper.set_target:
+#        id: my_stepper_m
+#        target: 10000
+#    - lambda: |-
+#              id(my_global_cal_flag_m) = 0;
+#  - platform: template
+#    name: set_time
+#    on_press:
+#    - stepper.set_deceleration:
+#        id: my_stepper_h
+#        deceleration: 1000 steps/s^2
+#    - stepper.set_acceleration:
+#        id: my_stepper_h
+#        acceleration: 1000 steps/s^2
+#    - stepper.set_speed:
+#        id: my_stepper_h
+#        speed: 500 steps/s
+#    - stepper.set_deceleration:
+#        id: my_stepper_m
+#        deceleration: 1000 steps/s^2
+#    - stepper.set_acceleration:
+#        id: my_stepper_m
+#        acceleration: 1000 steps/s^2
+#    - stepper.set_speed:
+#        id: my_stepper_m
+#        speed: 500 steps/s
+#    - lambda: |- 
+#              if (id(my_global_cal_flag_h) > 0) 
+#              {
+#                if (id(sntp_time).now().hour >12)
+#                {
+#                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+#                }
+#                else
+#                {
+#                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+#                }               
+#              }
+#              if (id(my_global_cal_flag_m) > 0) 
+#              {
+#                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+#              }
