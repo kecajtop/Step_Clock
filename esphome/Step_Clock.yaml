@@ -48,8 +48,6 @@ i2c:
   id: bus_a
   
 time:
-  - platform: ds1307
-    id: ds1307_time
   - platform: sntp
     id: sntp_time 
     # ...
@@ -57,30 +55,32 @@ time:
       then:
         # ... and update the RTC when the synchronization was successful
         ds1307.write_time:
+  - platform: ds1307
+    id: ds1307_time
     on_time:
       # Every 5 minutes
       - seconds: 0
         minutes: /5
         then:
           - lambda: |-
-              ESP_LOGD("lambda", "sntp_time");
+              ESP_LOGD("lambda", "ds1307_time");
               if (id(is_in_run_mode) > 0)
               { 
                 if (id(my_global_cal_flag_h) > 0) 
                 {
-                  if (id(sntp_time).now().hour >12)
+                  if (id(ds1307_time).now().hour >12)
                   {
-                    id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                    id(my_stepper_h).set_target(((id(ds1307_time).now().hour - 12) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
                   }
                   else
                   {
-                    id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                    id(my_stepper_h).set_target(((id(ds1307_time).now().hour) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
                   }
                   
                 }
                 if (id(my_global_cal_flag_m) > 0) 
                 {
-                  id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+                  id(my_stepper_m).set_target(id(ds1307_time).now().minute * 4096 / 60);
                 }
               }
               else
@@ -182,19 +182,19 @@ select:
             id(is_in_run_mode) = 1;
               if (id(my_global_cal_flag_h) > 0) 
               {
-                if (id(sntp_time).now().hour >12)
+                if (id(ds1307_time).now().hour >12)
                 {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  id(my_stepper_h).set_target(((id(ds1307_time).now().hour - 12) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
                 }
                 else
                 {
-                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+                  id(my_stepper_h).set_target(((id(ds1307_time).now().hour) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
                 }
                 
               }
               if (id(my_global_cal_flag_m) > 0) 
               {
-                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+                id(my_stepper_m).set_target(id(ds1307_time).now().minute * 4096 / 60);
               }
           }
           else if ( x == "STOP")
@@ -298,16 +298,16 @@ button:
 #    - lambda: |- 
 #              if (id(my_global_cal_flag_h) > 0) 
 #              {
-#                if (id(sntp_time).now().hour >12)
+#                if (id(ds1307_time).now().hour >12)
 #                {
-#                  id(my_stepper_h).set_target(((id(sntp_time).now().hour - 12) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+#                  id(my_stepper_h).set_target(((id(ds1307_time).now().hour - 12) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
 #                }
 #                else
 #                {
-#                  id(my_stepper_h).set_target(((id(sntp_time).now().hour) * 4096 / 12) + id(sntp_time).now().minute * 4096 / 720) ;
+#                  id(my_stepper_h).set_target(((id(ds1307_time).now().hour) * 4096 / 12) + id(ds1307_time).now().minute * 4096 / 720) ;
 #                }               
 #              }
 #              if (id(my_global_cal_flag_m) > 0) 
 #              {
-#                id(my_stepper_m).set_target(id(sntp_time).now().minute * 4096 / 60);
+#                id(my_stepper_m).set_target(id(ds1307_time).now().minute * 4096 / 60);
 #              }
